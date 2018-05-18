@@ -70,10 +70,6 @@ type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostA
 func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 	// start http1.0 server & swagger server in the background
 	go func() {
-		// Start HTTP/1.0 server at :80
-		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
-			return
-		}
 		// Start swagger server at :8888
 		if s.upRedoc {
 			err := exec.Command(
@@ -83,6 +79,10 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 			if err != nil {
 				return
 			}
+		}
+		// Start HTTP/1.0 server at :80
+		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
+			return
 		}
 	}()
 
