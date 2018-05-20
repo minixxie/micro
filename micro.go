@@ -4,9 +4,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -20,6 +17,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
+
+// SwaggerFile is the swagger file (local path)
+var SwaggerFile = "/swagger.json"
 
 // Service - to represent the microservice
 type Service struct {
@@ -70,16 +70,6 @@ type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostA
 func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 	// start http1.0 server & swagger server in the background
 	go func() {
-		// Start swagger server at :8888
-		if s.upRedoc {
-			err := exec.Command(
-				"/go/bin/swagger",
-				"serve", "--no-open", "--base-path=/", "-F", "redoc", "-p", "8888", "/swagger.json",
-			).Start()
-			if err != nil {
-				return
-			}
-		}
 		// Start HTTP/1.0 server at :80
 		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
 			return
@@ -120,30 +110,19 @@ func grpcGateway(grpcPort uint16, httpPort uint16, reverseProxyFunc ReverseProxy
 	})
 
 	// configure /docs HTTP/1 endpoint
-	url, _ := url.Parse("http://127.0.0.1:8888")
-	proxyToSwaggerServer := httputil.NewSingleHostReverseProxy(url)
 	patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
-	mux.Handle("GET", patternRedoc, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		proxyToSwaggerServer.ServeHTTP(w, r)
-	})
+	mux.Handle("GET", patternRedoc, redoc)
+
 	// configure /swagger.json HTTP/1 endpoint
 	patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"swagger.json"}, ""))
 	mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		proxyToSwaggerServer.ServeHTTP(w, r)
+		http.ServeFile(w, r, SwaggerFile)
 	})
 
 	err := reverseProxyFunc(ctx, mux, strings.Join([]string{"localhost:", strconv.FormatUint(uint64(grpcPort), 10)}, ""), opts)
 	if err != nil {
 		return err
 	}
-
-	// var err error
-	// // WalletService proxy
-	// err = lalamove_walletService_v1.RegisterWalletServiceHandlerFromEndpoint(
-	// 	ctx, mux, strings.Join([]string{"localhost:", strconv.FormatUint(grpcPort, 10)}, ""), opts)
-	// if err != nil {
-	// 	return err
-	// }
 
 	return http.ListenAndServe(strings.Join([]string{":", strconv.FormatUint(uint64(httpPort), 10)}, ""), mux)
 }
