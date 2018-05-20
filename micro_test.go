@@ -3,7 +3,6 @@ package micro
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"testing"
 	"time"
@@ -17,8 +16,7 @@ func TestNewService(t *testing.T) {
 	s := NewService(
 		[]grpc.StreamServerInterceptor{},
 		[]grpc.UnaryServerInterceptor{},
-	).UpRedoc(true)
-	assert.Equal(t, s.upRedoc, true)
+	)
 
 	SwaggerFile = "./swagger_demo.json"
 
@@ -34,7 +32,7 @@ func TestNewService(t *testing.T) {
 		) error {
 			return nil
 		}); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			t.Errorf("failed to serve: %v", err)
 		}
 	}()
 

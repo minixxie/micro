@@ -24,9 +24,7 @@ var SwaggerFile = "/swagger.json"
 
 // Service - to represent the microservice
 type Service struct {
-	GRPCServer *grpc.Server
-
-	upRedoc            bool
+	GRPCServer         *grpc.Server
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
 }
@@ -34,7 +32,6 @@ type Service struct {
 // NewService - to create the microservice object
 func NewService(streamInterceptors []grpc.StreamServerInterceptor, unaryInterceptors []grpc.UnaryServerInterceptor) *Service {
 	s := Service{}
-	s.upRedoc = false
 
 	tracer := opentracing.GlobalTracer()
 
@@ -56,12 +53,6 @@ func NewService(streamInterceptors []grpc.StreamServerInterceptor, unaryIntercep
 	)
 
 	return &s
-}
-
-// UpRedoc - to configure redoc server to run up at /docs endpoint
-func (s *Service) UpRedoc(up bool) *Service {
-	s.upRedoc = up
-	return s
 }
 
 // ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
