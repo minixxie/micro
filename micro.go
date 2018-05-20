@@ -88,11 +88,8 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 	if err != nil {
 		return err
 	}
-	if err = s.GRPCServer.Serve(lis); err != nil {
-		return err
-	}
 
-	return nil
+	return s.GRPCServer.Serve(lis)
 }
 
 func grpcGateway(grpcPort uint16, httpPort uint16, reverseProxyFunc ReverseProxyFunc) error {
