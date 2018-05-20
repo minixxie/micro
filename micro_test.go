@@ -22,10 +22,11 @@ func TestNewService(t *testing.T) {
 
 	SwaggerFile = "./swagger_demo.json"
 
-	var httpPort uint16
+	var httpPort, grpcPort uint16
 	httpPort = 8888
+	grpcPort = 9999
 	go func() {
-		if err := s.Start(httpPort, 9999, func(
+		if err := s.Start(httpPort, grpcPort, func(
 			ctx context.Context,
 			mux *runtime.ServeMux,
 			grpcHostAndPort string,
