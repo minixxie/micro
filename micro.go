@@ -73,7 +73,7 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 	go func() {
 		// Start HTTP/1.0 server at :80
 		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			log.Fatalf("failed to start gRPC gateway: %v", err)
 		}
 	}()
 
