@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
@@ -65,18 +63,18 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 
 	// Start HTTP/1.0 gateway server
 	go func() {
-		errChan <- grpcGateway(grpcPort, httpPort, reverseProxyFunc)
+		errChan <- grpcGateway(httpPort, grpcPort, reverseProxyFunc)
 	}()
 
 	// Start gRPC server
 	go func() {
-		errChan <- grpcServer(s.GRPCServer)
+		errChan <- grpcServer(s.GRPCServer, grpcPort)
 	}()
 
 	return <-errChan
 }
 
-func grpcServer(server *grpc.Server) error {
+func grpcServer(server *grpc.Server, grpcPort uint16) error {
 	// Setup /metrics for prometheus
 	grpc_prometheus.Register(server)
 
@@ -92,7 +90,7 @@ func grpcServer(server *grpc.Server) error {
 	return server.Serve(lis)
 }
 
-func grpcGateway(grpcPort uint16, httpPort uint16, reverseProxyFunc ReverseProxyFunc) error {
+func grpcGateway(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -117,10 +115,10 @@ func grpcGateway(grpcPort uint16, httpPort uint16, reverseProxyFunc ReverseProxy
 		http.ServeFile(w, r, SwaggerFile)
 	})
 
-	err := reverseProxyFunc(ctx, mux, strings.Join([]string{"localhost:", strconv.FormatUint(uint64(grpcPort), 10)}, ""), opts)
+	err := reverseProxyFunc(ctx, mux, fmt.Sprintf("localhost:%d", grpcPort), opts)
 	if err != nil {
 		return err
 	}
 
-	return http.ListenAndServe(strings.Join([]string{":", strconv.FormatUint(uint64(httpPort), 10)}, ""), mux)
+	return http.ListenAndServe(fmt.Sprintf(":%d", httpPort), mux)
 }

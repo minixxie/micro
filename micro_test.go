@@ -68,22 +68,16 @@ func TestNewService(t *testing.T) {
 }
 
 func TestPortsUnavailable(t *testing.T) {
-	s := NewService(
-		[]grpc.StreamServerInterceptor{},
-		[]grpc.UnaryServerInterceptor{},
-	)
+	// http port 8888 already in use
+	err := grpcGateway(httpPort, grpcPort, reverseProxyFunc)
+	assert.Error(t, err)
 
-	// ports 8888 and 9999 already in use
-	err := s.Start(httpPort, grpcPort, reverseProxyFunc)
+	// grpc port 9999 alreday in use
+	grpcServer(grpc.NewServer(), grpcPort)
 	assert.Error(t, err)
 }
 
 func TestErrorReverseProxyFunc(t *testing.T) {
-	s := NewService(
-		[]grpc.StreamServerInterceptor{},
-		[]grpc.UnaryServerInterceptor{},
-	)
-
 	// mock error from reverseProxyFunc
 	errText := "reverse proxy func error"
 	reverseProxyFunc = func(
@@ -95,6 +89,6 @@ func TestErrorReverseProxyFunc(t *testing.T) {
 		return errors.New(errText)
 	}
 
-	err := s.Start(httpPort, grpcPort, reverseProxyFunc)
+	err := grpcGateway(httpPort, grpcPort, reverseProxyFunc)
 	assert.EqualError(t, err, errText)
 }
