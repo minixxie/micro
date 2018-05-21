@@ -3,7 +3,6 @@ package micro
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -20,7 +19,7 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-// SwaggerFile is the swagger file (local path)
+// SwaggerFile - the swagger file (local path)
 var SwaggerFile = "/swagger.json"
 
 // Service - to represent the microservice
@@ -62,18 +61,27 @@ type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostA
 // Start - to start the microservice with listening on the ports
 func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 
-	// Start HTTP/1.0 gateway server in the background
+	errChan := make(chan error, 1)
+
+	// Start HTTP/1.0 gateway server
 	go func() {
-		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
-			log.Println(err)
-		}
+		errChan <- grpcGateway(grpcPort, httpPort, reverseProxyFunc)
 	}()
 
+	// Start gRPC server
+	go func() {
+		errChan <- grpcServer(s.GRPCServer)
+	}()
+
+	return <-errChan
+}
+
+func grpcServer(server *grpc.Server) error {
 	// Setup /metrics for prometheus
-	grpc_prometheus.Register(s.GRPCServer)
+	grpc_prometheus.Register(server)
 
 	// Register reflection service on gRPC server.
-	reflection.Register(s.GRPCServer)
+	reflection.Register(server)
 
 	grpcHost := fmt.Sprintf(":%d", grpcPort)
 	lis, err := net.Listen("tcp", grpcHost)
@@ -81,7 +89,7 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 		return err
 	}
 
-	return s.GRPCServer.Serve(lis)
+	return server.Serve(lis)
 }
 
 func grpcGateway(grpcPort uint16, httpPort uint16, reverseProxyFunc ReverseProxyFunc) error {

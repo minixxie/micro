@@ -96,5 +96,5 @@ func TestErrorReverseProxyFunc(t *testing.T) {
 	}
 
 	err := s.Start(httpPort, grpcPort, reverseProxyFunc)
-	assert.Error(t, err)
+	assert.EqualError(t, err, errText)
 }

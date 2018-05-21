@@ -6,17 +6,17 @@ import (
 	"net/http"
 )
 
-// RedocOpts is the Redoc configures type
+// RedocOpts - the Redoc configures type
 type RedocOpts struct {
-	// SpecURL the url to find the spec for
+	// SpecURL - the url to find the spec for
 	SpecURL string
-	// RedocURL for the js that generates the redoc site, defaults to: https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js
+	// RedocURL - the js that generates the redoc site, defaults to: https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js
 	RedocURL string
-	// Title for the documentation site, default to: API documentation
+	// Title - the documentation site, default to: API documentation
 	Title string
 }
 
-// RedocOptions configures the Redoc
+// RedocOptions - the Redoc configures
 var RedocOptions RedocOpts
 
 func (r *RedocOpts) ensureDefaults() {
@@ -31,7 +31,7 @@ func (r *RedocOpts) ensureDefaults() {
 	}
 }
 
-// redoc is the HandlerFunc for Redoc
+// redoc - the HandlerFunc for Redoc
 func redoc(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 
 	RedocOptions.ensureDefaults()
@@ -39,12 +39,11 @@ func redoc(w http.ResponseWriter, r *http.Request, pathParams map[string]string)
 	tmpl := template.Must(template.New("redoc").Parse(redocTemplate))
 
 	buf := bytes.NewBuffer(nil)
-	_ = tmpl.Execute(buf, RedocOptions)
-	b := buf.Bytes()
+	tmpl.Execute(buf, RedocOptions)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write(b)
+	w.Write(buf.Bytes())
 }
 
 const (
