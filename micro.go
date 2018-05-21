@@ -2,6 +2,8 @@ package micro
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -60,16 +62,12 @@ type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostA
 // Start - to start the microservice with listening on the ports
 func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 
-	errChan := make(chan error, 1)
-
 	// Start HTTP/1.0 gateway server in the background
 	go func() {
-		errChan <- grpcGateway(grpcPort, httpPort, reverseProxyFunc)
-		close(errChan)
+		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
+			log.Println(err)
+		}
 	}()
-	if err := <-errChan; err != nil {
-		return err
-	}
 
 	// Setup /metrics for prometheus
 	grpc_prometheus.Register(s.GRPCServer)
@@ -77,7 +75,7 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 	// Register reflection service on gRPC server.
 	reflection.Register(s.GRPCServer)
 
-	grpcHost := strings.Join([]string{":", strconv.FormatUint(uint64(grpcPort), 10)}, "")
+	grpcHost := fmt.Sprintf(":%d", grpcPort)
 	lis, err := net.Listen("tcp", grpcHost)
 	if err != nil {
 		return err
