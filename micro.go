@@ -2,7 +2,6 @@ package micro
 
 import (
 	"context"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -60,13 +59,17 @@ type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostA
 
 // Start - to start the microservice with listening on the ports
 func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
-	// start http1.0 server & swagger server in the background
+
+	errChan := make(chan error, 1)
+
+	// Start HTTP/1.0 gateway server in the background
 	go func() {
-		// Start HTTP/1.0 server at :80
-		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
-			log.Fatalf("failed to start gRPC gateway: %v", err)
-		}
+		errChan <- grpcGateway(grpcPort, httpPort, reverseProxyFunc)
+		close(errChan)
 	}()
+	if err := <-errChan; err != nil {
+		return err
+	}
 
 	// Setup /metrics for prometheus
 	grpc_prometheus.Register(s.GRPCServer)

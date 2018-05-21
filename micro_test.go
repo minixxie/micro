@@ -2,6 +2,7 @@ package micro
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -17,6 +18,14 @@ func TestNewService(t *testing.T) {
 		[]grpc.StreamServerInterceptor{},
 		[]grpc.UnaryServerInterceptor{},
 	)
+	reverseProxyFunc := func(
+		ctx context.Context,
+		mux *runtime.ServeMux,
+		grpcHostAndPort string,
+		opts []grpc.DialOption,
+	) error {
+		return nil
+	}
 
 	SwaggerFile = "./swagger_demo.json"
 
@@ -24,14 +33,7 @@ func TestNewService(t *testing.T) {
 	httpPort = 8888
 	grpcPort = 9999
 	go func() {
-		if err := s.Start(httpPort, grpcPort, func(
-			ctx context.Context,
-			mux *runtime.ServeMux,
-			grpcHostAndPort string,
-			opts []grpc.DialOption,
-		) error {
-			return nil
-		}); err != nil {
+		if err := s.Start(httpPort, grpcPort, reverseProxyFunc); err != nil {
 			t.Errorf("failed to serve: %v", err)
 		}
 	}()
@@ -45,4 +47,21 @@ func TestNewService(t *testing.T) {
 		t.Error(err)
 	}
 	assert.Equal(t, 200, resp.StatusCode)
+
+	// listen tcp :8888 already in use
+	err = s.Start(httpPort, grpcPort, reverseProxyFunc)
+	assert.Error(t, err)
+
+	// mock error from reverseProxyFunc
+	errText := "reverse proxy func error"
+	reverseProxyFunc = func(
+		ctx context.Context,
+		mux *runtime.ServeMux,
+		grpcHostAndPort string,
+		opts []grpc.DialOption,
+	) error {
+		return errors.New(errText)
+	}
+	err = s.Start(httpPort, grpcPort, reverseProxyFunc)
+	assert.EqualError(t, err, errText)
 }
