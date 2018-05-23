@@ -65,6 +65,12 @@ func TestNewService(t *testing.T) {
 		t.Error(err)
 	}
 	assert.Equal(t, 200, resp.StatusCode)
+
+	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", httpPort))
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, 200, resp.StatusCode)
 }
 
 func TestPortsUnavailable(t *testing.T) {
