@@ -23,13 +23,21 @@ var SwaggerFile = "/swagger.json"
 // Service - to represent the microservice
 type Service struct {
 	GRPCServer         *grpc.Server
+	HTTPServer         *http.Server
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
+	upRedoc            bool
 }
 
 // NewService - to create the microservice object
-func NewService(streamInterceptors []grpc.StreamServerInterceptor, unaryInterceptors []grpc.UnaryServerInterceptor) *Service {
-	s := Service{}
+func NewService(
+	streamInterceptors []grpc.StreamServerInterceptor,
+	unaryInterceptors []grpc.UnaryServerInterceptor,
+	upRedoc bool,
+) *Service {
+	s := Service{
+		upRedoc: upRedoc,
+	}
 
 	tracer := opentracing.GlobalTracer()
 
@@ -63,23 +71,23 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 
 	// Start HTTP/1.0 gateway server
 	go func() {
-		errChan <- grpcGateway(httpPort, grpcPort, reverseProxyFunc)
+		errChan <- s.startGrpcGateway(httpPort, grpcPort, reverseProxyFunc)
 	}()
 
 	// Start gRPC server
 	go func() {
-		errChan <- grpcServer(s.GRPCServer, grpcPort)
+		errChan <- s.startGrpcServer(grpcPort)
 	}()
 
 	return <-errChan
 }
 
-func grpcServer(server *grpc.Server, grpcPort uint16) error {
+func (s *Service) startGrpcServer(grpcPort uint16) error {
 	// Setup /metrics for prometheus
-	grpc_prometheus.Register(server)
+	grpc_prometheus.Register(s.GRPCServer)
 
 	// Register reflection service on gRPC server.
-	reflection.Register(server)
+	reflection.Register(s.GRPCServer)
 
 	grpcHost := fmt.Sprintf(":%d", grpcPort)
 	lis, err := net.Listen("tcp", grpcHost)
@@ -87,10 +95,10 @@ func grpcServer(server *grpc.Server, grpcPort uint16) error {
 		return err
 	}
 
-	return server.Serve(lis)
+	return s.GRPCServer.Serve(lis)
 }
 
-func grpcGateway(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
+func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -105,20 +113,33 @@ func grpcGateway(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxy
 		promhttp.Handler().ServeHTTP(w, r)
 	})
 
-	// configure /docs HTTP/1 endpoint
-	patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
-	mux.Handle("GET", patternRedoc, redoc)
+	if s.upRedoc {
+		// configure /docs HTTP/1 endpoint
+		patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
+		mux.Handle("GET", patternRedoc, redoc)
 
-	// configure /swagger.json HTTP/1 endpoint
-	patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"swagger.json"}, ""))
-	mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		http.ServeFile(w, r, SwaggerFile)
-	})
+		// configure /swagger.json HTTP/1 endpoint
+		patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"swagger.json"}, ""))
+		mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+			http.ServeFile(w, r, SwaggerFile)
+		})
+	}
 
 	err := reverseProxyFunc(ctx, mux, fmt.Sprintf("localhost:%d", grpcPort), opts)
 	if err != nil {
 		return err
 	}
 
-	return http.ListenAndServe(fmt.Sprintf(":%d", httpPort), mux)
+	s.HTTPServer = &http.Server{
+		Addr:    fmt.Sprintf(":%d", httpPort),
+		Handler: mux,
+	}
+
+	return s.HTTPServer.ListenAndServe()
+}
+
+// Stop - stop the microservice
+func (s *Service) Stop() {
+	s.GRPCServer.Stop()
+	s.HTTPServer.Shutdown(context.Background())
 }
