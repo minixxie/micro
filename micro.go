@@ -24,6 +24,7 @@ var SwaggerFile = "/swagger.json"
 type Service struct {
 	GRPCServer         *grpc.Server
 	HTTPServer         *http.Server
+	mux                *runtime.ServeMux
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
 	upRedoc            bool
@@ -59,6 +60,11 @@ func NewService(
 	)
 
 	return &s
+}
+
+// SetMux - set the mux for grpc gateway
+func (s *Service) SetMux(mux *runtime.ServeMux) {
+	s.mux = mux
 }
 
 // ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
@@ -103,36 +109,44 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{OrigName: true, EmitDefaults: true}))
+	if s.mux == nil { // set a default mux
+		mux := runtime.NewServeMux(
+			runtime.WithMarshalerOption(
+				runtime.MIMEWildcard,
+				&runtime.JSONPb{OrigName: true, EmitDefaults: true},
+			),
+		)
+		s.SetMux(mux)
+	}
 
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 
 	// configure /metrics HTTP/1 endpoint
 	patternMetrics := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"metrics"}, ""))
-	mux.Handle("GET", patternMetrics, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+	s.mux.Handle("GET", patternMetrics, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 		promhttp.Handler().ServeHTTP(w, r)
 	})
 
 	if s.upRedoc {
 		// configure /docs HTTP/1 endpoint
 		patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
-		mux.Handle("GET", patternRedoc, redoc)
+		s.mux.Handle("GET", patternRedoc, redoc)
 
 		// configure /swagger.json HTTP/1 endpoint
 		patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"swagger.json"}, ""))
-		mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+		s.mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 			http.ServeFile(w, r, SwaggerFile)
 		})
 	}
 
-	err := reverseProxyFunc(ctx, mux, fmt.Sprintf("localhost:%d", grpcPort), opts)
+	err := reverseProxyFunc(ctx, s.mux, fmt.Sprintf("localhost:%d", grpcPort), opts)
 	if err != nil {
 		return err
 	}
 
 	s.HTTPServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", httpPort),
-		Handler: mux,
+		Handler: s.mux,
 	}
 
 	return s.HTTPServer.ListenAndServe()
