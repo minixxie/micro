@@ -20,6 +20,9 @@ import (
 // SwaggerFile - the swagger file (local path)
 var SwaggerFile = "/swagger.json"
 
+// HandlerWrapper - http handler wrapper, it can be used to implement middlewares
+var HandlerWrapper HandlerWrapperFunc
+
 // Service - to represent the microservice
 type Service struct {
 	GRPCServer         *grpc.Server
@@ -29,6 +32,12 @@ type Service struct {
 	unaryInterceptors  []grpc.UnaryServerInterceptor
 	upRedoc            bool
 }
+
+// ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
+type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostAndPort string, opts []grpc.DialOption) error
+
+// HandlerWrapperFunc - http handler wrapper function
+type HandlerWrapperFunc func(mux *runtime.ServeMux) http.Handler
 
 // NewService - to create the microservice object
 func NewService(
@@ -66,9 +75,6 @@ func NewService(
 func (s *Service) SetMux(mux *runtime.ServeMux) {
 	s.mux = mux
 }
-
-// ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
-type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostAndPort string, opts []grpc.DialOption) error
 
 // Start - to start the microservice with listening on the ports
 func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
@@ -119,6 +125,12 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 		s.SetMux(mux)
 	}
 
+	if HandlerWrapper == nil { // set a default HandlerWrapper
+		HandlerWrapper = func(mux *runtime.ServeMux) http.Handler {
+			return mux
+		}
+	}
+
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 
 	// configure /metrics HTTP/1 endpoint
@@ -146,7 +158,7 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 
 	s.HTTPServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", httpPort),
-		Handler: s.mux,
+		Handler: HandlerWrapper(s.mux),
 	}
 
 	return s.HTTPServer.ListenAndServe()
