@@ -13,7 +13,9 @@ import (
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	uuid "github.com/satori/go.uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -22,6 +24,10 @@ var SwaggerFile = "/swagger.json"
 
 // HandlerWrapper - http handler wrapper, it can be used to implement middlewares
 var HandlerWrapper HandlerWrapperFunc
+
+// HTTPError - replies to the request with the error.
+// You can set a custom function to this variable to customize error format.
+var HTTPError runtime.ProtoErrorHandlerFunc
 
 // Service - to represent the microservice
 type Service struct {
@@ -39,7 +45,51 @@ type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostA
 // HandlerWrapperFunc - http handler wrapper function
 type HandlerWrapperFunc func(mux *runtime.ServeMux) http.Handler
 
-// NewService - to create the microservice object
+// DefaultMux - default server mux
+func DefaultMux() *runtime.ServeMux {
+
+	if HTTPError == nil {
+		HTTPError = runtime.DefaultHTTPError
+	}
+
+	return runtime.NewServeMux(
+		runtime.WithMarshalerOption(
+			runtime.MIMEWildcard,
+			&runtime.JSONPb{OrigName: true, EmitDefaults: true},
+		),
+		runtime.WithProtoErrorHandler(HTTPError),
+		runtime.WithMetadata(Annotator),
+	)
+}
+
+// DefaultHandlerWrapper - default http handler wrapper which will set the http response header with X-Request-Id
+func DefaultHandlerWrapper(mux *runtime.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Request-Id", RequestID(r))
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// RequestID - get X-Request-Id from http request header, if it does not exist then generate one
+func RequestID(req *http.Request) string {
+	id := req.Header.Get("X-Request-Id")
+
+	if id == "" {
+		id = uuid.NewV4().String()
+	}
+
+	// set it back into request header
+	req.Header.Set("X-Request-Id", id)
+
+	return id
+}
+
+// Annotator - set the X-Request-Id into gRPC context
+func Annotator(c context.Context, req *http.Request) metadata.MD {
+	return metadata.Pairs("x-request-id", RequestID(req))
+}
+
+// NewService - create a new microservice
 func NewService(
 	streamInterceptors []grpc.StreamServerInterceptor,
 	unaryInterceptors []grpc.UnaryServerInterceptor,
@@ -76,17 +126,17 @@ func (s *Service) SetMux(mux *runtime.ServeMux) {
 	s.mux = mux
 }
 
-// Start - to start the microservice with listening on the ports
+// Start - start the microservice with listening on the ports
 func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 
 	errChan := make(chan error, 1)
 
-	// Start HTTP/1.0 gateway server
+	// start HTTP/1.0 gateway server
 	go func() {
 		errChan <- s.startGrpcGateway(httpPort, grpcPort, reverseProxyFunc)
 	}()
 
-	// Start gRPC server
+	// start gRPC server
 	go func() {
 		errChan <- s.startGrpcServer(grpcPort)
 	}()
@@ -95,10 +145,10 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 }
 
 func (s *Service) startGrpcServer(grpcPort uint16) error {
-	// Setup /metrics for prometheus
+	// setup /metrics for prometheus
 	grpc_prometheus.Register(s.GRPCServer)
 
-	// Register reflection service on gRPC server.
+	// register reflection service on gRPC server.
 	reflection.Register(s.GRPCServer)
 
 	grpcHost := fmt.Sprintf(":%d", grpcPort)
@@ -116,19 +166,11 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 	defer cancel()
 
 	if s.mux == nil { // set a default mux
-		mux := runtime.NewServeMux(
-			runtime.WithMarshalerOption(
-				runtime.MIMEWildcard,
-				&runtime.JSONPb{OrigName: true, EmitDefaults: true},
-			),
-		)
-		s.SetMux(mux)
+		s.SetMux(DefaultMux())
 	}
 
 	if HandlerWrapper == nil { // set a default HandlerWrapper
-		HandlerWrapper = func(mux *runtime.ServeMux) http.Handler {
-			return mux
-		}
+		HandlerWrapper = DefaultHandlerWrapper
 	}
 
 	opts := []grpc.DialOption{grpc.WithInsecure()}

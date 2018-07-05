@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -66,12 +67,14 @@ func TestNewService(t *testing.T) {
 		t.Error(err)
 	}
 	assert.Equal(t, 200, resp.StatusCode)
+	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 
 	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", httpPort))
 	if err != nil {
 		t.Error(err)
 	}
 	assert.Equal(t, 200, resp.StatusCode)
+	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 
 	// another service
 	s2 := NewService(
@@ -111,7 +114,8 @@ func TestNewService(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	assert.Equal(t, 404, resp.StatusCode)
+	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 }
 
 func TestErrorReverseProxyFunc(t *testing.T) {
@@ -134,4 +138,14 @@ func TestErrorReverseProxyFunc(t *testing.T) {
 
 	err := s.startGrpcGateway(httpPort, grpcPort, reverseProxyFunc)
 	assert.EqualError(t, err, errText)
+}
+
+func TestAnnotator(t *testing.T) {
+	ctx := context.TODO()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Request-Id", "uuid")
+	md := Annotator(ctx, req)
+	id, ok := md["x-request-id"]
+	assert.True(t, ok)
+	assert.Equal(t, "uuid", id[0])
 }
