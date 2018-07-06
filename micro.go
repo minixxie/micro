@@ -22,18 +22,14 @@ import (
 // SwaggerFile - the swagger file (local path)
 var SwaggerFile = "/swagger.json"
 
-// HandlerWrapper - http handler wrapper, it can be used to implement middlewares
-var HandlerWrapper HandlerWrapperFunc
-
-// HTTPError - replies to the request with the error.
-// You can set a custom function to this variable to customize error format.
-var HTTPError runtime.ProtoErrorHandlerFunc
-
 // Service - to represent the microservice
 type Service struct {
 	GRPCServer         *grpc.Server
 	HTTPServer         *http.Server
-	mux                *runtime.ServeMux
+	Mux                *runtime.ServeMux
+	HTTPHandler        HTTPHandlerFunc
+	ErrorHandler       runtime.ProtoErrorHandlerFunc
+	Annotator          AnnotatorFunc
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
 	upRedoc            bool
@@ -42,32 +38,23 @@ type Service struct {
 // ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
 type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostAndPort string, opts []grpc.DialOption) error
 
-// HandlerWrapperFunc - http handler wrapper function
-type HandlerWrapperFunc func(mux *runtime.ServeMux) http.Handler
+// HTTPHandlerFunc - http handler function
+type HTTPHandlerFunc func(mux *runtime.ServeMux) http.Handler
 
-// DefaultMux - default server mux
-func DefaultMux() *runtime.ServeMux {
+// AnnotatorFunc - annotator function for injecting meta data from http request into gRPC context
+type AnnotatorFunc func(context.Context, *http.Request) metadata.MD
 
-	if HTTPError == nil {
-		HTTPError = runtime.DefaultHTTPError
-	}
-
-	return runtime.NewServeMux(
-		runtime.WithMarshalerOption(
-			runtime.MIMEWildcard,
-			&runtime.JSONPb{OrigName: true, EmitDefaults: true},
-		),
-		runtime.WithProtoErrorHandler(HTTPError),
-		runtime.WithMetadata(Annotator),
-	)
-}
-
-// DefaultHandlerWrapper - default http handler wrapper which will set the http response header with X-Request-Id
-func DefaultHandlerWrapper(mux *runtime.ServeMux) http.Handler {
+// DefaultHTTPHandler - default http handler which will set the http response header with X-Request-Id
+func DefaultHTTPHandler(mux *runtime.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-Id", RequestID(r))
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// DefaultAnnotator - set the X-Request-Id into gRPC context
+func DefaultAnnotator(c context.Context, req *http.Request) metadata.MD {
+	return metadata.Pairs("x-request-id", RequestID(req))
 }
 
 // RequestID - get X-Request-Id from http request header, if it does not exist then generate one
@@ -82,11 +69,6 @@ func RequestID(req *http.Request) string {
 	req.Header.Set("X-Request-Id", id)
 
 	return id
-}
-
-// Annotator - set the X-Request-Id into gRPC context
-func Annotator(c context.Context, req *http.Request) metadata.MD {
-	return metadata.Pairs("x-request-id", RequestID(req))
 }
 
 // NewService - create a new microservice
@@ -119,11 +101,6 @@ func NewService(
 	)
 
 	return &s
-}
-
-// SetMux - set the mux for grpc gateway
-func (s *Service) SetMux(mux *runtime.ServeMux) {
-	s.mux = mux
 }
 
 // Start - start the microservice with listening on the ports
@@ -165,42 +142,57 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if s.mux == nil { // set a default mux
-		s.SetMux(DefaultMux())
+	if s.ErrorHandler == nil {
+		s.ErrorHandler = runtime.DefaultHTTPError
 	}
 
-	if HandlerWrapper == nil { // set a default HandlerWrapper
-		HandlerWrapper = DefaultHandlerWrapper
+	if s.Annotator == nil {
+		s.Annotator = DefaultAnnotator
+	}
+
+	if s.Mux == nil { // set a default mux
+		s.Mux = runtime.NewServeMux(
+			runtime.WithMarshalerOption(
+				runtime.MIMEWildcard,
+				&runtime.JSONPb{OrigName: true, EmitDefaults: true},
+			),
+			runtime.WithProtoErrorHandler(s.ErrorHandler),
+			runtime.WithMetadata(s.Annotator),
+		)
+	}
+
+	if s.HTTPHandler == nil { // set a default http handler
+		s.HTTPHandler = DefaultHTTPHandler
 	}
 
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 
 	// configure /metrics HTTP/1 endpoint
 	patternMetrics := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"metrics"}, ""))
-	s.mux.Handle("GET", patternMetrics, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+	s.Mux.Handle("GET", patternMetrics, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 		promhttp.Handler().ServeHTTP(w, r)
 	})
 
 	if s.upRedoc {
 		// configure /docs HTTP/1 endpoint
 		patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
-		s.mux.Handle("GET", patternRedoc, redoc)
+		s.Mux.Handle("GET", patternRedoc, redoc)
 
 		// configure /swagger.json HTTP/1 endpoint
 		patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"swagger.json"}, ""))
-		s.mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+		s.Mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 			http.ServeFile(w, r, SwaggerFile)
 		})
 	}
 
-	err := reverseProxyFunc(ctx, s.mux, fmt.Sprintf("localhost:%d", grpcPort), opts)
+	err := reverseProxyFunc(ctx, s.Mux, fmt.Sprintf("localhost:%d", grpcPort), opts)
 	if err != nil {
 		return err
 	}
 
 	s.HTTPServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", httpPort),
-		Handler: HandlerWrapper(s.mux),
+		Handler: s.HTTPHandler(s.Mux),
 	}
 
 	return s.HTTPServer.ListenAndServe()
