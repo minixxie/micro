@@ -140,11 +140,11 @@ func TestErrorReverseProxyFunc(t *testing.T) {
 	assert.EqualError(t, err, errText)
 }
 
-func TestAnnotator(t *testing.T) {
+func TestDefaultAnnotator(t *testing.T) {
 	ctx := context.TODO()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Request-Id", "uuid")
-	md := Annotator(ctx, req)
+	md := DefaultAnnotator(ctx, req)
 	id, ok := md["x-request-id"]
 	assert.True(t, ok)
 	assert.Equal(t, "uuid", id[0])
