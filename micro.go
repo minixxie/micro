@@ -29,7 +29,7 @@ type Service struct {
 	Mux                *runtime.ServeMux
 	HTTPHandler        HTTPHandlerFunc
 	ErrorHandler       runtime.ProtoErrorHandlerFunc
-	Annotator          AnnotatorFunc
+	Annotators         []AnnotatorFunc
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
 	upRedoc            bool
@@ -41,7 +41,7 @@ type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostA
 // HTTPHandlerFunc - http handler function
 type HTTPHandlerFunc func(mux *runtime.ServeMux) http.Handler
 
-// AnnotatorFunc - annotator function for injecting meta data from http request into gRPC context
+// AnnotatorFunc - annotator function is for injecting meta data from http request into gRPC context
 type AnnotatorFunc func(context.Context, *http.Request) metadata.MD
 
 // DefaultHTTPHandler - default http handler which will set the http response header with X-Request-Id
@@ -146,19 +146,22 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 		s.ErrorHandler = runtime.DefaultHTTPError
 	}
 
-	if s.Annotator == nil {
-		s.Annotator = DefaultAnnotator
+	if s.Annotators == nil || len(s.Annotators) == 0 {
+		s.Annotators = append(s.Annotators, DefaultAnnotator)
+	}
+	var muxOptions []runtime.ServeMuxOption
+	muxOptions = append(muxOptions, runtime.WithMarshalerOption(
+		runtime.MIMEWildcard,
+		&runtime.JSONPb{OrigName: true, EmitDefaults: true},
+	))
+	muxOptions = append(muxOptions, runtime.WithProtoErrorHandler(s.ErrorHandler))
+
+	for _, annotator := range s.Annotators {
+		muxOptions = append(muxOptions, runtime.WithMetadata(annotator))
 	}
 
 	if s.Mux == nil { // set a default mux
-		s.Mux = runtime.NewServeMux(
-			runtime.WithMarshalerOption(
-				runtime.MIMEWildcard,
-				&runtime.JSONPb{OrigName: true, EmitDefaults: true},
-			),
-			runtime.WithProtoErrorHandler(s.ErrorHandler),
-			runtime.WithMetadata(s.Annotator),
-		)
+		s.Mux = runtime.NewServeMux(muxOptions...)
 	}
 
 	if s.HTTPHandler == nil { // set a default http handler
