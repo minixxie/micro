@@ -14,43 +14,44 @@ type RedocOpts struct {
 	RedocURL string
 	// Title - the page title, default to: API documentation
 	Title string
+	// Up - whether to boot up the redoc endpoints
+	Up bool
 }
 
-// RedocOptions - the Redoc configures
-var RedocOptions RedocOpts
-
-func (r *RedocOpts) ensureDefaults() {
-	if r.SpecURLs == nil {
-		r.AddSpec("Service", "/swagger.json")
+func (redoc *RedocOpts) ensureDefaults() {
+	if redoc.SpecURLs == nil {
+		redoc.AddSpec("Service", "/swagger.json")
 	}
 
-	if r.RedocURL == "" {
-		r.RedocURL = "https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"
+	if redoc.RedocURL == "" {
+		redoc.RedocURL = "https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"
 	}
 
-	if r.Title == "" {
-		r.Title = "API documentation"
+	if redoc.Title == "" {
+		redoc.Title = "API documentation"
 	}
 }
 
 // AddSpec - add a spec url with name
-func (r *RedocOpts) AddSpec(name, url string) {
-	if r.SpecURLs == nil {
-		r.SpecURLs = make(map[string]string)
+func (redoc *RedocOpts) AddSpec(name, url string) *RedocOpts {
+	if redoc.SpecURLs == nil {
+		redoc.SpecURLs = make(map[string]string)
 	}
 
-	r.SpecURLs[name] = url
+	redoc.SpecURLs[name] = url
+
+	return redoc
 }
 
-// redoc - the HandlerFunc for Redoc
-func redoc(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+// Serve - the HandlerFunc for Redoc
+func (redoc *RedocOpts) Serve(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 
-	RedocOptions.ensureDefaults()
+	redoc.ensureDefaults()
 
 	tmpl := template.Must(template.New("redoc").Parse(redocTemplate))
 
 	buf := bytes.NewBuffer(nil)
-	tmpl.Execute(buf, RedocOptions)
+	tmpl.Execute(buf, redoc)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

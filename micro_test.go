@@ -33,10 +33,16 @@ func init() {
 }
 
 func TestNewService(t *testing.T) {
+
+	redoc := &RedocOpts{
+		Up: true,
+	}
+	redoc.AddSpec("PetStore", "https://rebilly.github.io/ReDoc/swagger.yaml")
+
 	s := NewService(
 		[]grpc.StreamServerInterceptor{},
 		[]grpc.UnaryServerInterceptor{},
-		true,
+		redoc,
 	)
 
 	go func() {
@@ -67,6 +73,13 @@ func TestNewService(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 
+	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/docs", httpPort))
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
+
 	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", httpPort))
 	if err != nil {
 		t.Error(err)
@@ -78,7 +91,9 @@ func TestNewService(t *testing.T) {
 	s2 := NewService(
 		[]grpc.StreamServerInterceptor{},
 		[]grpc.UnaryServerInterceptor{},
-		false,
+		&RedocOpts{
+			Up: false,
+		},
 	)
 
 	// http port 8888 already in use
@@ -96,7 +111,9 @@ func TestNewService(t *testing.T) {
 	s = NewService(
 		[]grpc.StreamServerInterceptor{},
 		[]grpc.UnaryServerInterceptor{},
-		false,
+		&RedocOpts{
+			Up: false,
+		},
 	)
 	go func() {
 		if err := s.Start(httpPort, grpcPort, reverseProxyFunc); err != nil {
@@ -120,7 +137,9 @@ func TestErrorReverseProxyFunc(t *testing.T) {
 	s := NewService(
 		[]grpc.StreamServerInterceptor{},
 		[]grpc.UnaryServerInterceptor{},
-		false,
+		&RedocOpts{
+			Up: true,
+		},
 	)
 
 	// mock error from reverseProxyFunc
