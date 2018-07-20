@@ -30,8 +30,6 @@ func init() {
 
 	httpPort = 8888
 	grpcPort = 9999
-
-	SwaggerFile = "./swagger_demo.json"
 }
 
 func TestNewService(t *testing.T) {
@@ -66,7 +64,7 @@ func TestNewService(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 
 	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", httpPort))

@@ -19,9 +19,6 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-// SwaggerFile - the swagger file (local path)
-var SwaggerFile = "/swagger.json"
-
 // Service - to represent the microservice
 type Service struct {
 	GRPCServer         *grpc.Server
@@ -181,10 +178,10 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 		patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
 		s.Mux.Handle("GET", patternRedoc, redoc)
 
-		// configure /swagger.json HTTP/1 endpoint
-		patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"swagger.json"}, ""))
+		// configure /swagger.json and /*.swagger.json HTTP/1 endpoint
+		patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{1, 0}, []string{"swagger.json", "*.swagger.json"}, ""))
 		s.Mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-			http.ServeFile(w, r, SwaggerFile)
+			http.ServeFile(w, r, r.URL.Path)
 		})
 	}
 
