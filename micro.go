@@ -27,9 +27,9 @@ type Service struct {
 	HTTPHandler        HTTPHandlerFunc
 	ErrorHandler       runtime.ProtoErrorHandlerFunc
 	Annotators         []AnnotatorFunc
+	Redoc              *RedocOpts
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
-	upRedoc            bool
 }
 
 // ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
@@ -72,10 +72,10 @@ func RequestID(req *http.Request) string {
 func NewService(
 	streamInterceptors []grpc.StreamServerInterceptor,
 	unaryInterceptors []grpc.UnaryServerInterceptor,
-	upRedoc bool,
+	redoc *RedocOpts,
 ) *Service {
 	s := Service{
-		upRedoc: upRedoc,
+		Redoc: redoc,
 	}
 
 	tracer := opentracing.GlobalTracer()
@@ -173,10 +173,12 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 		promhttp.Handler().ServeHTTP(w, r)
 	})
 
-	if s.upRedoc {
+	if s.Redoc.Up {
 		// configure /docs HTTP/1 endpoint
 		patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
-		s.Mux.Handle("GET", patternRedoc, redoc)
+		s.Mux.Handle("GET", patternRedoc, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+			s.Redoc.Serve(w, r, pathParams)
+		})
 
 		// configure /swagger.json and /*.swagger.json HTTP/1 endpoint
 		patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{1, 0}, []string{"swagger.json", "*.swagger.json"}, ""))
