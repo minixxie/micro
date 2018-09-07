@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/grpc-ecosystem/grpc-gateway/utilities"
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -168,22 +172,16 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 
 	// configure /metrics HTTP/1 endpoint
-	patternMetrics := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"metrics"}, ""))
+	patternMetrics := runtime.MustPattern(runtime.NewPattern(1, []int{int(utilities.OpLitPush), 0}, []string{"metrics"}, ""))
 	s.Mux.Handle("GET", patternMetrics, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 		promhttp.Handler().ServeHTTP(w, r)
 	})
 
 	if s.Redoc.Up {
 		// configure /docs HTTP/1 endpoint
-		patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"docs"}, ""))
+		patternRedoc := runtime.MustPattern(runtime.NewPattern(1, []int{int(utilities.OpLitPush), 0}, []string{"docs"}, ""))
 		s.Mux.Handle("GET", patternRedoc, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 			s.Redoc.Serve(w, r, pathParams)
-		})
-
-		// configure /swagger.json and /*.swagger.json HTTP/1 endpoint
-		patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{1, 0}, []string{"swagger.json", "*.swagger.json"}, ""))
-		s.Mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-			http.ServeFile(w, r, r.URL.Path)
 		})
 	}
 
@@ -191,6 +189,24 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 	if err != nil {
 		return err
 	}
+
+	// configure /swagger.json and /*.swagger.json HTTP/1 endpoint
+	patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{int(utilities.OpPush), 0}, []string{""}, ""))
+	s.Mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+		if matched, _ := regexp.MatchString(".*swagger.json", r.URL.Path); !matched {
+			http.NotFound(w, r)
+			return
+		}
+
+		dir, _ := os.Getwd()
+		path := filepath.Join(dir, r.URL.Path)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+
+		http.ServeFile(w, r, path)
+	})
 
 	s.HTTPServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", httpPort),
