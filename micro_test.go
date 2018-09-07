@@ -66,25 +66,41 @@ func TestNewService(t *testing.T) {
 
 	// check if the http endpoint works
 	client := &http.Client{}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/swagger.json", httpPort))
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", httpPort))
 	if err != nil {
 		t.Error(err)
 	}
-	assert.Equal(t, 404, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
+
+	client = &http.Client{}
+	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/fake.swagger.json", httpPort))
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
+
+	client = &http.Client{}
+	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/demo.swagger.json", httpPort))
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 
 	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/docs", httpPort))
 	if err != nil {
 		t.Error(err)
 	}
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 
 	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", httpPort))
 	if err != nil {
 		t.Error(err)
 	}
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 
 	// another service
@@ -129,7 +145,7 @@ func TestNewService(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.Len(t, resp.Header.Get("X-Request-Id"), 36)
 }
 
