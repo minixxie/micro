@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/google/uuid"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -17,7 +18,6 @@ import (
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	uuid "github.com/satori/go.uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
@@ -63,7 +63,7 @@ func RequestID(req *http.Request) string {
 	id := req.Header.Get("X-Request-Id")
 
 	if id == "" {
-		id = uuid.NewV4().String()
+		id = uuid.New().String()
 	}
 
 	// set it back into request header
@@ -190,10 +190,12 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 		return err
 	}
 
-	// configure /swagger.json and /*.swagger.json HTTP/1 endpoint
-	patternSwaggerJSON := runtime.MustPattern(runtime.NewPattern(1, []int{int(utilities.OpPush), 0}, []string{""}, ""))
-	s.Mux.Handle("GET", patternSwaggerJSON, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		if matched, _ := regexp.MatchString(".*swagger.json", r.URL.Path); !matched {
+	// configure /swagger.json and /*.swagger.json HTTP/1 endpoints.
+	// this is the fallback handler that will check if it's requesting swagger files,
+	// if not matched or file not exists, then a 404 error will be returned.
+	patternFallback := runtime.MustPattern(runtime.NewPattern(1, []int{int(utilities.OpPush), 0}, []string{""}, ""))
+	s.Mux.Handle("GET", patternFallback, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+		if matched, _ := regexp.MatchString(".*swagger\\.json", r.URL.Path); !matched {
 			http.NotFound(w, r)
 			return
 		}
