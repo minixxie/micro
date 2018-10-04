@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 
 	"github.com/google/uuid"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -34,6 +33,7 @@ type Service struct {
 	Redoc              *RedocOpts
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
+	StaticDir          string
 }
 
 // ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
@@ -190,19 +190,18 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 		return err
 	}
 
-	// configure /swagger.json and /*.swagger.json HTTP/1 endpoints.
-	// this is the fallback handler that will check if it's requesting swagger files,
-	// if not matched or file not exists, then a 404 error will be returned.
+	// this is the fallback handler that will serve static files,
+	// if file not exists, then a 404 error will be returned.
 	patternFallback := runtime.MustPattern(runtime.NewPattern(1, []int{int(utilities.OpPush), 0}, []string{""}, ""))
 	s.Mux.Handle("GET", patternFallback, func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		if matched, _ := regexp.MatchString(".*swagger\\.json", r.URL.Path); !matched {
-			http.NotFound(w, r)
-			return
+		dir := s.StaticDir
+		if s.StaticDir == "" {
+			dir, _ = os.Getwd()
 		}
 
-		dir, _ := os.Getwd()
+		// check if the file exists and fobid showing directory
 		path := filepath.Join(dir, r.URL.Path)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
+		if fileInfo, err := os.Stat(path); os.IsNotExist(err) || fileInfo.IsDir() {
 			http.NotFound(w, r)
 			return
 		}
