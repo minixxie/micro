@@ -97,6 +97,10 @@ func NewService(
 	s.unaryInterceptors = append(s.unaryInterceptors, otgrpc.OpenTracingServerInterceptor(tracer))
 	s.unaryInterceptors = append(s.unaryInterceptors, unaryInterceptors...)
 
+	// install panic handler
+	s.streamInterceptors = append(s.streamInterceptors, StreamPanicHandler)
+	s.unaryInterceptors = append(s.unaryInterceptors, UnaryPanicHandler)
+
 	s.GRPCServer = grpc.NewServer(
 		grpc_middleware.WithStreamServerChain(s.streamInterceptors...),
 		grpc_middleware.WithUnaryServerChain(s.unaryInterceptors...),
