@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/handlers"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -211,7 +212,7 @@ func (s *Service) startGrpcGateway(httpPort uint16, grpcPort uint16, reverseProx
 
 	s.HTTPServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", httpPort),
-		Handler: s.HTTPHandler(s.Mux),
+		Handler: handlers.RecoveryHandler()(s.HTTPHandler(s.Mux)),
 	}
 
 	return s.HTTPServer.ListenAndServe()
