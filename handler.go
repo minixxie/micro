@@ -33,6 +33,7 @@ func StreamPanicHandler(srv interface{}, stream grpc.ServerStream, info *grpc.St
 
 func handleCrash(handler func(interface{})) {
 	if r := recover(); r != nil {
+		Logger().Infof("Panic caught: %v", r)
 		handler(r)
 	}
 }

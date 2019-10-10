@@ -8,6 +8,8 @@ import (
 
 // RedocOpts - the Redoc configures type
 type RedocOpts struct {
+	// Route - the route in http server, DO NOT include / at the beginning
+	Route string
 	// SpecURLs - the urls to find the spec for, format: name -> url
 	SpecURLs map[string]string
 	// RedocURL - the js that generates the redoc site, defaults to: https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js
