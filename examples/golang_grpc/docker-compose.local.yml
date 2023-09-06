@@ -1,0 +1,26 @@
+version: '2'
+services:
+  local_golang_grpc:
+    container_name: local_golang_grpc
+    hostname: local_golang_grpc
+    build:
+      context: ../..
+      dockerfile: ./examples/golang_grpc/Dockerfile
+      args:
+        - APP=golang_grpc
+    image: golang_grpc:1.0
+    volumes:
+    - "./config:/config"
+    command: /config/local.yml
+    expose:
+    - 80
+    - 8080
+    networks:
+    - local_network
+    environment:
+    - VIRTUAL_HOST=golang_grpc.local
+    - VIRTUAL_PORT=80
+networks:
+  local_network:
+    external:
+      name: local_network

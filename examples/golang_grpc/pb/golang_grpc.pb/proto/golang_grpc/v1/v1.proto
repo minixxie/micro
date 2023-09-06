@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package proto.golang_grpc.v1;
+option go_package = "proto/golang_grpc/v1";
+
+import "google/api/annotations.proto";
+// import "github.com/mwitkow/go-proto-validators@v0.3.2/validator.proto";
+// import "github.com/gogo/protobuf/protobuf/google/protobuf/timestamp.proto";
+import "protoc-gen-swagger/options/annotations.proto";
+// import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
+  info: {
+    title: "FirstService, SecondService";
+    version: "1.0";
+  };
+};
+
+service FirstService {
+    rpc Echo(FirstServiceEchoRequest) returns (FirstServiceEchoResponse) {
+        option (google.api.http) = {
+            post: "/v1/FirstService/Echo"
+            body: "*"
+        };
+    }
+    rpc GetFirst(GetFirstRequest) returns (GetFirstResponse) {
+        option (google.api.http) = {
+            post: "/v1/FirstService/GetFirst"
+            body: "*"
+        };
+    }
+    rpc TryDataTypes(TryDataTypesRequest) returns (TryDataTypesResponse) {
+        option (google.api.http) = {
+            post: "/v1/FirstService/TryDataTypes"
+            body: "*"
+        };
+    }
+    rpc SimulateError(SimulateErrorRequest) returns (SimulateErrorResponse) {
+        option (google.api.http) = {
+            post: "/v1/FirstService/SimulateError"
+            body: "*"
+        };
+    }
+    rpc CreateRecord(CreateRecordRequest) returns (CreateRecordResponse) {
+        option (google.api.http) = {
+            post: "/v1/FirstService/CreateRecord"
+            body: "*"
+        };
+    }
+}
+
+message FirstServiceEchoRequest {
+    // string name = 1 [(validator.field) = {regex: "^[a-z]{2,5}$"}];
+    string name = 1; 
+}
+message FirstServiceEchoResponse {
+    string msg = 1;
+}
+
+message GetFirstRequest {
+    string name = 1;
+}
+message GetFirstResponse {
+    string msg = 1;
+}
+
+message TryDataTypesRequest {
+//    google.protobuf.Timestamp time = 1;
+}
+message TryDataTypesResponse {
+//    google.protobuf.Timestamp time = 1;
+}
+
+message SimulateErrorRequest {
+    string name = 1;
+}
+message SimulateErrorResponse {
+    string msg = 1;
+}
+
+message CreateRecordRequest {
+    string name = 1;
+}
+message CreateRecordResponse {
+    uint32 id = 1;
+}
+
+
+
+service SecondService {
+    rpc Echo(SecondServiceEchoRequest) returns (SecondServiceEchoResponse) {
+        option (google.api.http) = {
+            post: "/v1/SecondService/Echo"
+            body: "*"
+        };
+    }
+    rpc GetSecond(GetSecondRequest) returns (GetSecondResponse) {
+        option (google.api.http) = {
+            post: "/v1/SecondService/GetSecond"
+            body: "*"
+        };
+    }
+}
+
+message SecondServiceEchoRequest {
+    string name = 1;
+}
+message SecondServiceEchoResponse {
+    string msg = 1;
+}
+
+message GetSecondRequest {
+    string name = 1;
+}
+message GetSecondResponse {
+    string msg = 1;
+}

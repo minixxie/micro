@@ -1,0 +1,6 @@
+POST http://local_golang_grpc/v1/FirstService/Echo
+Content-Type: application/json; charset=utf8
+
+{
+	"name": "simon"
+}

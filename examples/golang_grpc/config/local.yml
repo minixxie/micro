@@ -1,0 +1,6 @@
+dbs:
+  main:
+    uri: local_golang_grpc:local_golang_grpc@tcp(mariadb10.3:3306)/local_golang_grpc?charset=utf8
+    maxIdleConns: 20
+    maxOpenConns: 50
+    expectedSchemaVersion: 1

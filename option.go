@@ -5,7 +5,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"google.golang.org/grpc"
 )
 
@@ -40,13 +39,6 @@ func Redoc(redoc *RedocOpts) Option {
 func Annotator(annotator AnnotatorFunc) Option {
 	return func(s *Service) {
 		s.annotators = append(s.annotators, annotator)
-	}
-}
-
-// ErrorHandler - return an Option to set the errorHandler
-func ErrorHandler(errorHandler runtime.ProtoErrorHandlerFunc) Option {
-	return func(s *Service) {
-		s.errorHandler = errorHandler
 	}
 }
 

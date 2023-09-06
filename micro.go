@@ -31,7 +31,6 @@ type Service struct {
 	GRPCServer         *grpc.Server
 	HTTPServer         *http.Server
 	httpHandler        HTTPHandlerFunc
-	errorHandler       runtime.ProtoErrorHandlerFunc
 	annotators         []AnnotatorFunc
 	redoc              *RedocOpts
 	staticDir          string
@@ -114,7 +113,6 @@ func RequestID(req *http.Request) string {
 func defaultService() *Service {
 	s := Service{}
 	s.annotators = append(s.annotators, DefaultAnnotator)
-	s.errorHandler = runtime.DefaultHTTPError
 	s.httpHandler = DefaultHTTPHandler
 	s.shutdownFunc = func() {}
 	s.shutdownTimeout = defaultShutdownTimeout
@@ -262,11 +260,6 @@ func (s *Service) startGRPCServer(grpcPort uint16) error {
 
 func (s *Service) startGRPCGateway(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
 	var muxOptions []runtime.ServeMuxOption
-	muxOptions = append(muxOptions, runtime.WithMarshalerOption(
-		runtime.MIMEWildcard,
-		&runtime.JSONPb{OrigName: true, EmitDefaults: true},
-	))
-	muxOptions = append(muxOptions, runtime.WithProtoErrorHandler(s.errorHandler))
 
 	for _, annotator := range s.annotators {
 		muxOptions = append(muxOptions, runtime.WithMetadata(annotator))

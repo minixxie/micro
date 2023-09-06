@@ -1,0 +1,5 @@
+mariadbImage=mariadb:10.3 # mariadb docker image for cli
+mariadb=mariadb10.3 # mariadb container name
+
+DB=local_golang_grpc
+APP_USERS=(local_golang_grpc )
