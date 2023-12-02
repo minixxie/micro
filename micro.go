@@ -4,38 +4,67 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
 	"net/http"
 	"strconv"
 	"strings"
 
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	// grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	// grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
+	// grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
+	// "google.golang.org/grpc/reflection"
+
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
 
 // SwaggerFile is the swagger file (local path)
-var SwaggerFile = "/swagger.json"
+const SwaggerFile = "/swagger.json"
 
 // Service - to represent the microservice
 type Service struct {
-	GRPCServer *grpc.Server
+	GRPCServer         *grpc.Server
+        grpcServices       []grpcService
 
-	upRedoc            bool
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
+
+	upRedoc            bool
+	grpcGatewayPort    uint16
+	grpcPort           uint16
+
+	// OTEL Meter
+	meterProvider *sdkmetric.MeterProvider
+	// OTEL Trace
+	tracerProvider *sdktrace.TracerProvider
+
+}
+
+// ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
+// type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostAndPort string, opts []grpc.DialOption) error
+type RegisterServiceHandlerFunc func(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error
+
+type grpcService struct {
+	serviceDesc *grpc.ServiceDesc
+	srv interface{}
+	registerServiceHandlerFunc RegisterServiceHandlerFunc
 }
 
 // NewService - to create the microservice object
-func NewService(streamInterceptors []grpc.StreamServerInterceptor, unaryInterceptors []grpc.UnaryServerInterceptor) *Service {
+func NewService() *Service {
 	s := Service{}
-	s.upRedoc = false
 
+	s.upRedoc = os.Getenv("MICRO_REDOC") == "1"
+	s.grpcGatewayPort = 80
+	s.grpcPort = 9090
+
+	s.initOpenTelemetry()
+
+	/*
 	tracer := opentracing.GlobalTracer()
 
 	s.streamInterceptors = []grpc.StreamServerInterceptor{}
@@ -53,9 +82,25 @@ func NewService(streamInterceptors []grpc.StreamServerInterceptor, unaryIntercep
 	s.GRPCServer = grpc.NewServer(
 		grpc_middleware.WithStreamServerChain(s.streamInterceptors...),
 		grpc_middleware.WithUnaryServerChain(s.unaryInterceptors...),
-	)
+	)*/
 
 	return &s
+}
+
+func (s *Service) SetGRPCGatewayPort(port uint16) {
+	s.grpcGatewayPort = port
+}
+
+func (s *Service) SetGRPCPort(port uint16) {
+	s.grpcPort = port
+}
+
+func (s *Service) AddService(serviceDesc *grpc.ServiceDesc, srv interface{}, registerServiceHandlerFunc RegisterServiceHandlerFunc) {
+	s.grpcServices = append(s.grpcServices, grpcService{
+		serviceDesc: serviceDesc,
+		srv: srv,
+		registerServiceHandlerFunc: registerServiceHandlerFunc,
+	})
 }
 
 // UpRedoc - to configure redoc server to run up at /docs endpoint
@@ -64,26 +109,36 @@ func (s *Service) UpRedoc(up bool) *Service {
 	return s
 }
 
-// ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
-type ReverseProxyFunc func(ctx context.Context, mux *runtime.ServeMux, grpcHostAndPort string, opts []grpc.DialOption) error
 
 // Start - to start the microservice with listening on the ports
-func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
+func (s *Service) Start() error {
+	s.GRPCServer = grpc.NewServer(
+		// grpc_middleware.WithStreamServerChain(s.streamInterceptors...),
+		// grpc_middleware.WithUnaryServerChain(s.unaryInterceptors...),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+	)
+
 	// start http1.0 server & swagger server in the background
 	go func() {
 		// Start HTTP/1.0 server at :80
-		if err := grpcGateway(grpcPort, httpPort, reverseProxyFunc); err != nil {
+		if err := s.grpcGateway(); err != nil {
 			log.Fatalf("failed to start gRPC gateway: %v", err)
 		}
 	}()
 
 	// Setup /metrics for prometheus
-	grpc_prometheus.Register(s.GRPCServer)
+	//grpc_prometheus.Register(s.GRPCServer)
 
 	// Register reflection service on gRPC server.
-	reflection.Register(s.GRPCServer)
+	//reflection.Register(s.GRPCServer)
 
-	grpcHost := strings.Join([]string{":", strconv.FormatUint(uint64(grpcPort), 10)}, "")
+	for _, grpcService := range s.grpcServices {
+		s.GRPCServer.RegisterService(grpcService.serviceDesc, grpcService.srv)
+	}
+
+	grpcHost := strings.Join([]string{":", strconv.FormatUint(uint64(s.grpcPort), 10)}, "")
 	lis, err := net.Listen("tcp", grpcHost)
 	if err != nil {
 		return err
@@ -92,14 +147,18 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 	return s.GRPCServer.Serve(lis)
 }
 
-func grpcGateway(grpcPort uint16, httpPort uint16, reverseProxyFunc ReverseProxyFunc) error {
+func (s *Service) Stop() {
+	s.shutdownOpenTelemetry()
+}
+
+func (s *Service) grpcGateway() error {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{}))
 
-	opts := []grpc.DialOption{grpc.WithInsecure()}
+	// opts := []grpc.DialOption{grpc.WithInsecure()}
 
 	// configure /metrics HTTP/1 endpoint
 	patternMetrics := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"metrics"}, ""))
@@ -117,10 +176,25 @@ func grpcGateway(grpcPort uint16, httpPort uint16, reverseProxyFunc ReverseProxy
 		http.ServeFile(w, r, SwaggerFile)
 	})
 
-	err := reverseProxyFunc(ctx, mux, strings.Join([]string{"localhost:", strconv.FormatUint(uint64(grpcPort), 10)}, ""), opts)
+	grpcHostAndPort := strings.Join([]string{":", strconv.FormatUint(uint64(s.grpcPort), 10)}, "")
+	conn, err := grpc.DialContext(context.Background(), grpcHostAndPort, grpc.WithInsecure())
+
 	if err != nil {
+		log.Printf("Cannot establish gRPC connection from gRPC gateway: %v\n", err)
 		return err
 	}
 
-	return http.ListenAndServe(strings.Join([]string{":", strconv.FormatUint(uint64(httpPort), 10)}, ""), mux)
+	for _, grpcService := range s.grpcServices {
+		err := grpcService.registerServiceHandlerFunc(ctx, mux, conn)
+		if err != nil {
+			return err
+		}
+	}
+
+	/*err := reverseProxyFunc(ctx, mux, strings.Join([]string{"localhost:", strconv.FormatUint(uint64(grpcPort), 10)}, ""), opts)
+	if err != nil {
+		return err
+	}*/
+
+	return http.ListenAndServe(strings.Join([]string{":", strconv.FormatUint(uint64(s.grpcGatewayPort), 10)}, ""), mux)
 }
