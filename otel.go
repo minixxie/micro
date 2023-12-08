@@ -51,7 +51,7 @@ func (s *Service) shutdownOpenTelemetry() {
 }
 
 func initMeterProvider() *sdkmetric.MeterProvider {
-	log.Printf("initMeterProvider()...");
+	// log.Printf("initMeterProvider()...");
 	ctx := context.Background()
 
 	exporter, err := otlpmetricgrpc.New(ctx,
@@ -72,7 +72,7 @@ func initMeterProvider() *sdkmetric.MeterProvider {
 }
 
 func initTracerProvider() *sdktrace.TracerProvider {
-	log.Printf("initTracerProvider()...");
+	// log.Printf("initTracerProvider()...");
 	ctx := context.Background()
 
 	exporter, err := otlptracegrpc.New(ctx,

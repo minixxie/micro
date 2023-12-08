@@ -20,6 +20,10 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // SwaggerFile is the swagger file (local path)
@@ -113,11 +117,9 @@ func (s *Service) UpRedoc(up bool) *Service {
 // Start - to start the microservice with listening on the ports
 func (s *Service) Start() error {
 	s.GRPCServer = grpc.NewServer(
-		// grpc_middleware.WithStreamServerChain(s.streamInterceptors...),
-		// grpc_middleware.WithUnaryServerChain(s.unaryInterceptors...),
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
-		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+		// grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		// grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
 	)
 
 	// start http1.0 server & swagger server in the background
@@ -177,7 +179,14 @@ func (s *Service) grpcGateway() error {
 	})
 
 	grpcHostAndPort := strings.Join([]string{":", strconv.FormatUint(uint64(s.grpcPort), 10)}, "")
-	conn, err := grpc.DialContext(context.Background(), grpcHostAndPort, grpc.WithInsecure())
+	conn, err := grpc.DialContext(
+		context.Background(),
+		grpcHostAndPort,
+		grpc.WithInsecure(),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		// grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
+		// grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
+	)
 
 	if err != nil {
 		log.Printf("Cannot establish gRPC connection from gRPC gateway: %v\n", err)
@@ -191,10 +200,40 @@ func (s *Service) grpcGateway() error {
 		}
 	}
 
-	/*err := reverseProxyFunc(ctx, mux, strings.Join([]string{"localhost:", strconv.FormatUint(uint64(grpcPort), 10)}, ""), opts)
-	if err != nil {
-		return err
-	}*/
+	var handler http.Handler
+	handler = otelhttp.NewHandler(mux, "grpc-gateway: mux.ServeHTTP()")
+	handler = newTraceparentHandler(handler)
 
-	return http.ListenAndServe(strings.Join([]string{":", strconv.FormatUint(uint64(s.grpcGatewayPort), 10)}, ""), mux)
+	return http.ListenAndServe(strings.Join([]string{":", strconv.FormatUint(uint64(s.grpcGatewayPort), 10)}, ""), handler)
+}
+
+// https://uptrace.dev/opentelemetry/opentelemetry-traceparent.html#injecting-traceparent-header
+type traceparentHandler struct {
+	next  http.Handler
+	props propagation.TextMapPropagator
+}
+
+func newTraceparentHandler(next http.Handler) *traceparentHandler {
+	return &traceparentHandler{
+		next:  next,
+		props: otel.GetTextMapPropagator(),
+	}
+}
+
+func (h *traceparentHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// https://faun.pub/multi-hop-tracing-with-opentelemetry-in-golang-792df5feb37c
+	// Extract Span/Trace info from the request header
+	ctx := otel.GetTextMapPropagator().Extract(
+		req.Context(), propagation.HeaderCarrier(req.Header),
+	)
+
+	tracer := otel.GetTracerProvider().Tracer("")
+	ctx, span := tracer.Start(ctx, "grpc-gateway: " + req.Method + " " + req.URL.String(),
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+	defer span.End()
+
+	h.props.Inject(ctx, propagation.HeaderCarrier(w.Header()))
+
+	h.next.ServeHTTP(w, req.WithContext(ctx))
 }
