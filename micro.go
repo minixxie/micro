@@ -41,6 +41,12 @@ type Service struct {
 	grpcGatewayPort    uint16
 	grpcPort           uint16
 
+	cors               bool
+	corsOrigins        []string
+	corsHTTPMethods        []string
+	corsHeaders        []string
+	corsAllowCredentials bool
+
 	// OTEL Meter
 	meterProvider *sdkmetric.MeterProvider
 	// OTEL Trace
@@ -97,6 +103,18 @@ func (s *Service) SetGRPCGatewayPort(port uint16) {
 
 func (s *Service) SetGRPCPort(port uint16) {
 	s.grpcPort = port
+}
+
+func (s *Service) EnableCORS(corsOrigins []string, corsHTTPMethods []string, corsHeaders []string, corsAllowCredentials bool) {
+	s.corsOrigins = corsOrigins
+	s.corsHTTPMethods = corsHTTPMethods
+	s.corsHeaders = corsHeaders
+	s.corsAllowCredentials = corsAllowCredentials
+	s.cors = true
+}
+
+func (s *Service) DisableCORS() {
+	s.cors = false
 }
 
 func (s *Service) AddService(serviceDesc *grpc.ServiceDesc, srv interface{}, registerServiceHandlerFunc RegisterServiceHandlerFunc) {
@@ -204,6 +222,11 @@ func (s *Service) grpcGateway() error {
 	handler = otelhttp.NewHandler(mux, "grpc-gateway: mux.ServeHTTP()")
 	handler = newTraceparentHandler(handler)
 
+	// Add CORS handler
+	if s.cors {
+		handler = s.corsHandler(handler)
+	}
+
 	return http.ListenAndServe(strings.Join([]string{":", strconv.FormatUint(uint64(s.grpcGatewayPort), 10)}, ""), handler)
 }
 
@@ -236,4 +259,22 @@ func (h *traceparentHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	h.props.Inject(ctx, propagation.HeaderCarrier(w.Header()))
 
 	h.next.ServeHTTP(w, req.WithContext(ctx))
+}
+
+func (s *Service) corsHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", strings.Join(s.corsOrigins, ","))
+		if s.corsAllowCredentials {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", strings.Join(s.corsHTTPMethods, ","))
+			w.Header().Set("Access-Control-Allow-Headers", strings.Join(s.corsHeaders, ","))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
