@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	// "google.golang.org/grpc/reflection"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -176,7 +177,13 @@ func (s *Service) grpcGateway() error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{}))
+	marshaler := &runtime.JSONPb{
+		MarshalOptions: protojson.MarshalOptions{
+			Indent:       "",
+			EmitUnpopulated: true,
+		},
+	}
+	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, marshaler))
 
 	// opts := []grpc.DialOption{grpc.WithInsecure()}
 
