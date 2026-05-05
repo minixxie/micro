@@ -4,8 +4,8 @@ import (
 	"context"
 	"log"
 	"net"
-	"os"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -18,12 +18,12 @@ import (
 	// "google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -32,27 +32,26 @@ const SwaggerFile = "/swagger.json"
 
 // Service - to represent the microservice
 type Service struct {
-	GRPCServer         *grpc.Server
-        grpcServices       []grpcService
+	GRPCServer   *grpc.Server
+	grpcServices []grpcService
 
 	streamInterceptors []grpc.StreamServerInterceptor
 	unaryInterceptors  []grpc.UnaryServerInterceptor
 
-	upRedoc            bool
-	grpcGatewayPort    uint16
-	grpcPort           uint16
+	upRedoc         bool
+	grpcGatewayPort uint16
+	grpcPort        uint16
 
-	cors               bool
-	corsOrigins        []string
-	corsHTTPMethods        []string
-	corsHeaders        []string
+	cors                 bool
+	corsOrigins          []string
+	corsHTTPMethods      []string
+	corsHeaders          []string
 	corsAllowCredentials bool
 
 	// OTEL Meter
 	meterProvider *sdkmetric.MeterProvider
 	// OTEL Trace
 	tracerProvider *sdktrace.TracerProvider
-
 }
 
 // ReverseProxyFunc - a callback that the caller should implement to steps to reverse-proxy the HTTP/1 requests to gRPC
@@ -60,8 +59,8 @@ type Service struct {
 type RegisterServiceHandlerFunc func(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error
 
 type grpcService struct {
-	serviceDesc *grpc.ServiceDesc
-	srv interface{}
+	serviceDesc                *grpc.ServiceDesc
+	srv                        interface{}
 	registerServiceHandlerFunc RegisterServiceHandlerFunc
 }
 
@@ -76,24 +75,24 @@ func NewService() *Service {
 	s.initOpenTelemetry()
 
 	/*
-	tracer := opentracing.GlobalTracer()
+		tracer := opentracing.GlobalTracer()
 
-	s.streamInterceptors = []grpc.StreamServerInterceptor{}
-	s.streamInterceptors = append(s.streamInterceptors, grpc_prometheus.StreamServerInterceptor)
-	s.streamInterceptors = append(s.streamInterceptors, grpc_validator.StreamServerInterceptor())
-	s.streamInterceptors = append(s.streamInterceptors, otgrpc.OpenTracingStreamServerInterceptor(tracer))
-	s.streamInterceptors = append(s.streamInterceptors, streamInterceptors...)
+		s.streamInterceptors = []grpc.StreamServerInterceptor{}
+		s.streamInterceptors = append(s.streamInterceptors, grpc_prometheus.StreamServerInterceptor)
+		s.streamInterceptors = append(s.streamInterceptors, grpc_validator.StreamServerInterceptor())
+		s.streamInterceptors = append(s.streamInterceptors, otgrpc.OpenTracingStreamServerInterceptor(tracer))
+		s.streamInterceptors = append(s.streamInterceptors, streamInterceptors...)
 
-	s.unaryInterceptors = []grpc.UnaryServerInterceptor{}
-	s.unaryInterceptors = append(s.unaryInterceptors, grpc_prometheus.UnaryServerInterceptor)
-	s.unaryInterceptors = append(s.unaryInterceptors, grpc_validator.UnaryServerInterceptor())
-	s.unaryInterceptors = append(s.unaryInterceptors, otgrpc.OpenTracingServerInterceptor(tracer))
-	s.unaryInterceptors = append(s.unaryInterceptors, unaryInterceptors...)
+		s.unaryInterceptors = []grpc.UnaryServerInterceptor{}
+		s.unaryInterceptors = append(s.unaryInterceptors, grpc_prometheus.UnaryServerInterceptor)
+		s.unaryInterceptors = append(s.unaryInterceptors, grpc_validator.UnaryServerInterceptor())
+		s.unaryInterceptors = append(s.unaryInterceptors, otgrpc.OpenTracingServerInterceptor(tracer))
+		s.unaryInterceptors = append(s.unaryInterceptors, unaryInterceptors...)
 
-	s.GRPCServer = grpc.NewServer(
-		grpc_middleware.WithStreamServerChain(s.streamInterceptors...),
-		grpc_middleware.WithUnaryServerChain(s.unaryInterceptors...),
-	)*/
+		s.GRPCServer = grpc.NewServer(
+			grpc_middleware.WithStreamServerChain(s.streamInterceptors...),
+			grpc_middleware.WithUnaryServerChain(s.unaryInterceptors...),
+		)*/
 
 	return &s
 }
@@ -120,8 +119,8 @@ func (s *Service) DisableCORS() {
 
 func (s *Service) AddService(serviceDesc *grpc.ServiceDesc, srv interface{}, registerServiceHandlerFunc RegisterServiceHandlerFunc) {
 	s.grpcServices = append(s.grpcServices, grpcService{
-		serviceDesc: serviceDesc,
-		srv: srv,
+		serviceDesc:                serviceDesc,
+		srv:                        srv,
 		registerServiceHandlerFunc: registerServiceHandlerFunc,
 	})
 }
@@ -131,7 +130,6 @@ func (s *Service) UpRedoc(up bool) *Service {
 	s.upRedoc = up
 	return s
 }
-
 
 // Start - to start the microservice with listening on the ports
 func (s *Service) Start() error {
@@ -179,7 +177,7 @@ func (s *Service) grpcGateway() error {
 
 	marshaler := &runtime.JSONPb{
 		MarshalOptions: protojson.MarshalOptions{
-			Indent:       "",
+			Indent:          "",
 			EmitUnpopulated: true,
 		},
 	}
@@ -258,7 +256,7 @@ func (h *traceparentHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	)
 
 	tracer := otel.GetTracerProvider().Tracer("")
-	ctx, span := tracer.Start(ctx, "grpc-gateway: " + req.Method + " " + req.URL.String(),
+	ctx, span := tracer.Start(ctx, "grpc-gateway: "+req.Method+" "+req.URL.String(),
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
 	defer span.End()

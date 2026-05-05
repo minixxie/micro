@@ -10,7 +10,7 @@ import (
 type RedocOpts struct {
 	// SpecURL the url to find the spec for
 	SpecURL string
-	// RedocURL for the js that generates the redoc site, defaults to: https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js
+	// RedocURL for the js that generates the redoc site, defaults to: https://cdn.jsdelivr.net/npm/redoc@2.5.2/bundles/redoc.standalone.js
 	RedocURL string
 	// Title for the documentation site, default to: API documentation
 	Title string
@@ -24,7 +24,7 @@ func (r *RedocOpts) ensureDefaults() {
 		r.SpecURL = "/swagger.json"
 	}
 	if r.RedocURL == "" {
-		r.RedocURL = "https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"
+		r.RedocURL = "https://cdn.jsdelivr.net/npm/redoc@2.5.2/bundles/redoc.standalone.js"
 	}
 	if r.Title == "" {
 		r.Title = "API documentation"
