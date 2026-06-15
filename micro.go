@@ -48,6 +48,9 @@ type Service struct {
 	corsHeaders          []string
 	corsAllowCredentials bool
 
+	// HTTP middleware
+	middleware []func(http.Handler) http.Handler
+
 	// OTEL Meter
 	meterProvider *sdkmetric.MeterProvider
 	// OTEL Trace
@@ -115,6 +118,14 @@ func (s *Service) EnableCORS(corsOrigins []string, corsHTTPMethods []string, cor
 
 func (s *Service) DisableCORS() {
 	s.cors = false
+}
+
+// AddMiddleware adds an HTTP middleware to the service.
+// Middleware is applied in the order they are added, wrapping the handler chain.
+// The middleware function takes the next handler and returns a new handler that
+// wraps it. Middleware is applied after CORS and before the gRPC-gateway mux.
+func (s *Service) AddMiddleware(middleware func(http.Handler) http.Handler) {
+	s.middleware = append(s.middleware, middleware)
 }
 
 func (s *Service) AddService(serviceDesc *grpc.ServiceDesc, srv interface{}, registerServiceHandlerFunc RegisterServiceHandlerFunc) {
@@ -227,7 +238,12 @@ func (s *Service) grpcGateway() error {
 	handler = otelhttp.NewHandler(mux, "grpc-gateway: mux.ServeHTTP()")
 	handler = newTraceparentHandler(handler)
 
-	// Add CORS handler
+	// Apply custom middleware (in reverse order so first added is outermost)
+	for i := len(s.middleware) - 1; i >= 0; i-- {
+		handler = s.middleware[i](handler)
+	}
+
+	// Add CORS handler (outermost)
 	if s.cors {
 		handler = s.corsHandler(handler)
 	}
